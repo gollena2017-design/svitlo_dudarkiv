@@ -3,7 +3,7 @@ name: Світлобот Дударків
 on:
   schedule:
     # Щодня о 7:00 Київського часу (UTC+2/3)
-    - cron: "0 4 * * *"  # UTC = Київ - 3 години
+    - cron: "0 4 * * *"  # UTC = Київ - 3 години зимою (UTC+2)
     # Перевірка каналу кожні 5 хв
     - cron: "*/5 * * * *"
   workflow_dispatch:  # ручний запуск
@@ -20,7 +20,7 @@ jobs:
           python-version: "3.11"
 
       - name: Встановити залежності
-        run: pip install --upgrade pip && pip install requests python-telegram-bot beautifulsoup4
+        run: pip install requests python-telegram-bot beautifulsoup4 --upgrade
 
       - name: Запустити парсер
         run: python parser.py
