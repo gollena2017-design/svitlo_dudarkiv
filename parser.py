@@ -3,7 +3,7 @@ import requests
 import re
 from bs4 import BeautifulSoup
 from telegram import Bot
-from datetime import datetime, timezone
+from datetime import datetime
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
@@ -15,79 +15,92 @@ SCHEDULE_URL = "https://bezsvitla.com.ua/kyiv/cherha-6-2"
 
 bot = Bot(token=BOT_TOKEN)
 
-# --------------------------
-# Перевіряємо чи це ранковий запуск (7:00 Київ)
-# --------------------------
-def is_morning_run():
-    now_utc = datetime.now(timezone.utc)
-    return now_utc.hour == 4  # 7:00 Київ = 4:00 UTC (зараз зимовий час)
 
 # --------------------------
-# Отримання графіку
+# допоміжні файли стану
 # --------------------------
-def get_shutdown_schedule():
-    try:
-        resp = requests.get(SCHEDULE_URL, timeout=10)
-        if resp.status_code != 200:
-            return f"Не вдалося отримати графік: {resp.status_code}"
-    except Exception as e:
-        return f"Помилка запиту: {e}"
+LAST_POST_FILE = "last_post.txt"
+LAST_SCHEDULE_FILE = "last_schedule.txt"
 
+
+def read_file(path):
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return f.read().strip()
+    return None
+
+
+def write_file(path, value):
+    with open(path, "w") as f:
+        f.write(value)
+
+
+# --------------------------
+# 1. Надсилання графіку (1 раз на день)
+# --------------------------
+def send_schedule_once():
+    today = datetime.now().strftime("%Y-%m-%d")
+    last_sent = read_file(LAST_SCHEDULE_FILE)
+
+    if last_sent == today:
+        print("Графік вже був сьогодні")
+        return
+
+    print("Надсилаємо графік...")
+
+    resp = requests.get(SCHEDULE_URL, timeout=10)
     soup = BeautifulSoup(resp.text, "html.parser")
-    text = soup.get_text(separator="\n").strip()
-    return text[:3500]
 
-def send_schedule():
-    print("Надсилаємо ранковий графік...")
-    schedule_text = get_shutdown_schedule()
+    text = soup.get_text("\n")
+    text = text[:3500]
 
     bot.send_message(
         chat_id=CHAT_ID,
-        text=f"🌅 Графік відключень Дударків (черга 6.2):\n\n{schedule_text}"
+        text=f"🌅 Графік відключень Дударків (черга 6.2):\n\n{text}"
     )
 
+    write_file(LAST_SCHEDULE_FILE, today)
+
+
 # --------------------------
-# Перевірка каналу
+# 2. Перевірка Пристолички
 # --------------------------
-def get_latest_messages():
+def check_channel():
+    print("Перевіряємо Пристоличку...")
+
     url = f"https://t.me/s/{CHANNEL_USERNAME}"
     resp = requests.get(url)
-
-    if resp.status_code != 200:
-        print("Не вдалося отримати канал")
-        return []
 
     posts = re.findall(
         r'<div class="tgme_widget_message_text" dir="auto">(.*?)</div>',
         resp.text,
-        re.DOTALL,
+        re.DOTALL
     )
 
-    clean_posts = [re.sub(r"<.*?>", "", p).strip() for p in posts]
-    return clean_posts
+    clean_posts = [re.sub(r'<.*?>', '', p).strip() for p in posts]
 
-def check_channel():
-    print("Перевіряємо Пристоличку...")
-    messages = get_latest_messages()
-
-    if not messages:
+    if not clean_posts:
         return
 
-    latest = messages[0]
+    latest = clean_posts[0]
+    last_saved = read_file(LAST_POST_FILE)
+
+    if latest == last_saved:
+        print("Нових повідомлень нема")
+        return
 
     if any(k in latest for k in KEYWORDS):
+        print("Є нове повідомлення → надсилаємо")
         bot.send_message(chat_id=CHAT_ID, text=latest)
-        print("Знайдено новину про Дударків")
+        write_file(LAST_POST_FILE, latest)
+    else:
+        print("Повідомлення не про Дударків")
+
 
 # --------------------------
-# MAIN (ОДИН запуск!)
+# запуск (ОДИН раз!)
 # --------------------------
-if __name__ == "__main__":
-    print("START")
-
-    if is_morning_run():
-        send_schedule()
-
-    check_channel()
-
-    print("DONE")
+print("START")
+send_schedule_once()
+check_channel()
+print("DONE")
