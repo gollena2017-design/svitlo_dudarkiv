@@ -2,7 +2,10 @@ name: Світлобот Дударків
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # перевірка кожні 5 хв
+    # щодня о 07:00 надсилаємо графік
+    - cron: "0 7 * * *"
+    # перевірка каналу кожні 5 хв
+    - cron: "*/5 * * * *"
   workflow_dispatch:  # дозволяє запускати вручну
 
 jobs:
@@ -10,12 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Встановити Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
+
       - name: Встановити залежності
-        run: pip install requests python-telegram-bot --upgrade
+        run: pip install requests python-telegram-bot beautifulsoup4 --upgrade
+
       - name: Запустити парсер
         run: python parser.py
         env:
