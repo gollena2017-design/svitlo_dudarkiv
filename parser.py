@@ -1,98 +1,70 @@
-# parser.py
-
 import os
-import requests
-import re
-from bs4 import BeautifulSoup
-from telegram import Bot
+import asyncio
 from datetime import datetime
+from telegram import Bot
+from playwright.async_api import async_playwright
 
 # --------------------------
-# Налаштування через GitHub Secrets
+# Telegram налаштування
 # --------------------------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
-
-CHANNEL_USERNAME = "power_prystolychka"
-KEYWORDS = ["Дударків", "#dudarkiv"]
-
 bot = Bot(token=BOT_TOKEN)
 
-LAST_SCHEDULE_FILE = "last_schedule_date.txt"
+# --------------------------
+# URL графіка для Дударкова
+# --------------------------
+URL = "https://bezsvitla.com.ua/kyiv/cherha-6-2"  # правильна черга Дударків
+SCREENSHOT_FILE = "dudarkiv_schedule.png"
+LAST_SENT_FILE = "last_schedule_date.txt"
 
 # --------------------------
-# Графік відключень
+# Функція захоплення скріншоту потрібного блоку
 # --------------------------
-SCHEDULE_URL = "https://bezsvitla.com.ua/kyiv/cherha-6-2"
+async def capture_schedule():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(URL)
+        # Чекаємо на блок графіка для черги 6.2
+        await page.wait_for_selector(".schedule-block", timeout=10000)
+        element = await page.query_selector(".schedule-block")
+        if element:
+            await element.screenshot(path=SCREENSHOT_FILE)
+            print("Скріншот Дударкова збережено:", SCREENSHOT_FILE)
+        await browser.close()
 
-def get_shutdown_schedule():
-    try:
-        resp = requests.get(SCHEDULE_URL, timeout=10)
-        if resp.status_code != 200:
-            return f"Не вдалося отримати графік: статус {resp.status_code}"
-    except Exception as e:
-        return f"Помилка при запиті: {e}"
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-    content_div = soup.find("div", class_="schedule")
-    if content_div:
-        return content_div.get_text(separator="\n").strip()
-    else:
-        text = soup.get_text(separator="\n").strip()
-        return text[:2000]
-
-def send_schedule_once():
+# --------------------------
+# Відправка фото один раз на день
+# --------------------------
+async def send_schedule_once():
     today_str = datetime.now().strftime("%Y-%m-%d")
     last_date = None
-    if os.path.exists(LAST_SCHEDULE_FILE):
-        with open(LAST_SCHEDULE_FILE, "r") as f:
+    if os.path.exists(LAST_SENT_FILE):
+        with open(LAST_SENT_FILE, "r") as f:
             last_date = f.read().strip()
 
     if last_date == today_str:
-        print("Графік вже надсилали сьогодні")
+        print("Графік Дударкова вже надсилали сьогодні")
         return
 
-    schedule_text = get_shutdown_schedule()
-    bot.send_message(
-        chat_id=CHAT_ID,
-        text=f"🌅 Графік відключень для Дударків (черга 6.2) на сьогодні:\n\n{schedule_text}"
-    )
-    print("Графік надіслано")
+    await capture_schedule()
 
-    with open(LAST_SCHEDULE_FILE, "w") as f:
+    with open(SCREENSHOT_FILE, "rb") as f:
+        bot.send_photo(
+            chat_id=CHAT_ID,
+            photo=f,
+            caption=f"🌅 Графік відключень для Дударків (Київська область, черга 6.2) на сьогодні"
+        )
+
+    with open(LAST_SENT_FILE, "w") as f:
         f.write(today_str)
 
-# --------------------------
-# Парсер Telegram-каналу (один раз)
-# --------------------------
-def get_latest_messages():
-    url = f"https://t.me/s/{CHANNEL_USERNAME}"
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        print("Не вдалося отримати дані з каналу")
-        return []
-
-    posts = re.findall(r'<div class="tgme_widget_message_text" dir="auto">(.*?)</div>', resp.text, re.DOTALL)
-    clean_posts = [re.sub(r'<.*?>', '', p).strip() for p in posts]
-    return clean_posts
-
-def send_new_messages():
-    messages = get_latest_messages()
-    if not messages:
-        return
-
-    latest = messages[0]
-    if any(k in latest for k in KEYWORDS):
-        try:
-            bot.send_message(chat_id=CHAT_ID, text=latest)
-            print("Надіслано повідомлення:", latest[:50], "...")
-        except Exception as e:
-            print("Помилка надсилання:", e)
+    print("Графік Дударкова надіслано")
 
 # --------------------------
-# Запуск (один раз)
+# Запуск
 # --------------------------
 if __name__ == "__main__":
-    send_schedule_once()
-    send_new_messages()
-    print("Світлобот Дударків завершив роботу ✅")
+    print("Світлобот Дударків запущено...")
+    asyncio.run(send_schedule_once())
