@@ -16,14 +16,15 @@ CHAT_ID = os.environ["CHAT_ID"]
 
 CHANNEL_USERNAME = "power_prystolychka"
 KEYWORDS = ["Дударків", "#dudarkiv"]
-CHECK_INTERVAL = 300  # 5 хв у секундах
+CHECK_INTERVAL = 300  # 5 хв
 
 bot = Bot(token=BOT_TOKEN)
 
 last_message_id = None
+LAST_SCHEDULE_FILE = "last_schedule_date.txt"
 
 # --------------------------
-# Графік відключень з bezsvitla.com.ua
+# Графік відключень
 # --------------------------
 SCHEDULE_URL = "https://bezsvitla.com.ua/kyiv/cherha-6-2"
 
@@ -36,21 +37,36 @@ def get_shutdown_schedule():
         return f"Помилка при запиті: {e}"
 
     soup = BeautifulSoup(resp.text, "html.parser")
-    content_div = soup.find("div", class_="schedule")  # клас може змінюватися
+    content_div = soup.find("div", class_="schedule")
     if content_div:
         return content_div.get_text(separator="\n").strip()
     else:
-        # Альтернатива: взяти весь текст сторінки (обмеження Telegram 2000 символів)
         text = soup.get_text(separator="\n").strip()
         return text[:2000]
 
-def send_schedule():
+def send_schedule_once():
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    # перевіряємо, чи вже надсилали сьогодні
+    last_date = None
+    if os.path.exists(LAST_SCHEDULE_FILE):
+        with open(LAST_SCHEDULE_FILE, "r") as f:
+            last_date = f.read().strip()
+
+    if last_date == today_str:
+        print("Графік вже надсилали сьогодні")
+        return
+
+    # надсилаємо графік
     schedule_text = get_shutdown_schedule()
     bot.send_message(
         chat_id=CHAT_ID,
         text=f"🌅 Графік відключень для Дударків (черга 6.2) на сьогодні:\n\n{schedule_text}"
     )
     print("Графік надіслано")
+
+    # зберігаємо дату останнього надсилання
+    with open(LAST_SCHEDULE_FILE, "w") as f:
+        f.write(today_str)
 
 # --------------------------
 # Парсер Telegram-каналу
@@ -85,13 +101,7 @@ def send_new_messages():
 # Запуск
 # --------------------------
 if __name__ == "__main__":
-    now = datetime.now()
-    # Надсилаємо графік, якщо запуск після 7:00 або при першому старті
-    if now.hour >= 7:
-        send_schedule()
-    else:
-        print("Ще рано надсилати графік, почекаємо до 7:00")
-
+    send_schedule_once()
     print("Світлобот Дударків запущено...")
 
     while True:
