@@ -2,17 +2,26 @@ name: Світлобот Дударків
 
 on:
   schedule:
-    # Щодня о 7:00 Київського часу (UTC+2/3)
-    - cron: "0 4 * * *"  # UTC = Київ - 3 години зимою (UTC+2)
-    # Перевірка каналу кожні 5 хв
+    # Щодня о 07:00 Київ (влітку UTC+3 → 04:00 UTC)
+    - cron: "0 4 * * *"
+
+    # Моніторинг кожні 5 хв
     - cron: "*/5 * * * *"
+
   workflow_dispatch:  # ручний запуск
+
+# 🔒 НЕ ДАЄ запускатися кільком копіям одночасно
+concurrency:
+  group: svitlobot
+  cancel-in-progress: true
 
 jobs:
   run-parser:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
       - name: Встановити Python
         uses: actions/setup-python@v4
@@ -20,9 +29,9 @@ jobs:
           python-version: "3.11"
 
       - name: Встановити залежності
-        run: pip install requests python-telegram-bot beautifulsoup4 --upgrade
+        run: pip install requests python-telegram-bot beautifulsoup4
 
-      - name: Запустити парсер
+      - name: Запустити бота
         run: python parser.py
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
