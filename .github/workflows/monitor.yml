@@ -1,10 +1,12 @@
+# .github/workflows/monitor.yml
+
 name: Світлобот Дударків
 
 on:
   schedule:
-    # Щодня о 7:00 Київського часу (UTC+2/3)
-    - cron: "0 4 * * *"   # UTC = Київ - 3 години зимою (UTC+2)
-    # Перевірка каналу кожні 5 хв
+    # Щодня о 7:00 Київського часу (UTC+2/3) — переведено в UTC
+    - cron: "0 4 * * *"  # UTC = Київ - 3 години зимою (UTC+2)
+    # Перевірка Telegram-каналу кожні 5 хв
     - cron: "*/5 * * * *"
   workflow_dispatch:  # ручний запуск
 
@@ -12,17 +14,21 @@ jobs:
   run-parser:
     runs-on: ubuntu-latest
     steps:
+      # Клонування репозиторію
       - uses: actions/checkout@v3
 
+      # Встановлення Python
       - name: Встановити Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
+      # Встановлення залежностей
       - name: Встановити залежності
         run: pip install --upgrade requests python-telegram-bot beautifulsoup4
 
-      - name: Запустити парсер
+      # Запуск бота
+      - name: Запустити бот
         run: python parser.py
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
