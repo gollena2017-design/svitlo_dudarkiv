@@ -1,78 +1,47 @@
-# parser.py
-
 import os
-import time
 import requests
 import re
 from bs4 import BeautifulSoup
 from telegram import Bot
 from datetime import datetime
 
-# --------------------------
-# Налаштування через GitHub Secrets
-# --------------------------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
 CHANNEL_USERNAME = "power_prystolychka"
 KEYWORDS = ["Дударків", "#dudarkiv"]
-CHECK_INTERVAL = 300  # 5 хв
 
 bot = Bot(token=BOT_TOKEN)
-last_message_id = None
-LAST_SCHEDULE_FILE = "last_schedule_date.txt"
 
 # --------------------------
-# Графік відключень
+# 1️⃣ Графік відключень
 # --------------------------
 SCHEDULE_URL = "https://bezsvitla.com.ua/kyiv/cherha-6-2"
 
 def get_shutdown_schedule():
     try:
         resp = requests.get(SCHEDULE_URL, timeout=10)
-        if resp.status_code != 200:
-            return f"Не вдалося отримати графік: статус {resp.status_code}"
+        resp.raise_for_status()
     except Exception as e:
-        return f"Помилка при запиті: {e}"
+        return f"Не вдалося отримати графік: {e}"
 
     soup = BeautifulSoup(resp.text, "html.parser")
     content_div = soup.find("div", class_="schedule")
     if content_div:
         return content_div.get_text(separator="\n").strip()
-    else:
-        text = soup.get_text(separator="\n").strip()
-        return text[:2000]  # обмежуємо до 2000 символів для Telegram
+    return "Графік не знайдено."
 
-def send_schedule_once():
+def send_schedule():
     today_str = datetime.now().strftime("%Y-%m-%d")
-    last_date = None
-    if os.path.exists(LAST_SCHEDULE_FILE):
-        with open(LAST_SCHEDULE_FILE, "r") as f:
-            last_date = f.read().strip()
-
-    if last_date == today_str:
-        print("Графік вже надсилали сьогодні")
-        return
-
     schedule_text = get_shutdown_schedule()
     bot.send_message(
         chat_id=CHAT_ID,
-        text=f"🌅 Графік відключень для Дударків (черга 6.2) на сьогодні:\n\n{schedule_text}"
+        text=f"🌅 Графік відключень для Дударків (черга 6.2) на {today_str}:\n\n{schedule_text}"
     )
     print("Графік надіслано")
 
-    with open(LAST_SCHEDULE_FILE, "w") as f:
-        f.write(today_str)
-
 # --------------------------
-# Тестове повідомлення
-# --------------------------
-def send_test_message():
-    bot.send_message(chat_id=CHAT_ID, text="✅ Бот запущено і готовий до роботи")
-    print("Тестове повідомлення надіслано")
-
-# --------------------------
-# Парсер Telegram-каналу
+# 2️⃣ Парсер Telegram-каналу
 # --------------------------
 def get_latest_messages():
     url = f"https://t.me/s/{CHANNEL_USERNAME}"
@@ -85,32 +54,29 @@ def get_latest_messages():
     clean_posts = [re.sub(r'<.*?>', '', p).strip() for p in posts]
     return clean_posts
 
-def send_new_messages():
-    global last_message_id
+def send_new_messages(last_message_id=None):
     messages = get_latest_messages()
     if not messages:
-        return
+        return None
 
     latest = messages[0]
     if latest != last_message_id and any(k in latest for k in KEYWORDS):
         try:
             bot.send_message(chat_id=CHAT_ID, text=latest)
             print("Надіслано повідомлення:", latest[:50], "...")
-            last_message_id = latest
+            return latest
         except Exception as e:
             print("Помилка надсилання:", e)
+    return last_message_id
 
 # --------------------------
 # Запуск
 # --------------------------
 if __name__ == "__main__":
-    print("START")
-    send_test_message()       # ✅ відразу надсилаємо тест
-    send_schedule_once()      # 🌅 надсилаємо графік лише один раз на день
-    print("Світлобот Дударків запущено...")
+    mode = os.environ.get("MODE", "channel")  # "schedule" або "channel"
 
-    while True:
-        print("Перевіряємо Пристоличку...")
-        send_new_messages()
-        print("DONE")
-        time.sleep(CHECK_INTERVAL)
+    if mode == "schedule":
+        send_schedule()
+    else:
+        last_message_id = None
+        last_message_id = send_new_messages(last_message_id)
